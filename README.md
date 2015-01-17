@@ -1,2 +1,2 @@
-# PML_Project
-Practical Machine Learning Coursera Project Repo
+# Practical Machine Learning Project
+This repository is for my Coursera Practical Machine Learning Project
