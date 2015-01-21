@@ -1,0 +1,154 @@
+---
+title: "Practical Machine Learning Project"
+author: "PSaunders"
+date: "Sunday, January 18, 2015"
+output: html_document
+---
+
+Project Aims
+------------------------
+The aim is to produce a machine learning algorithm to predict the manner in which a bicep curl was performed
+from data obtained from sensors on the dumbbell and the participant's belt, arm and forearm.
+
+
+Data Exploration and Cleaning
+------------------------
+
+I began by loading the Weight Lifting Exercise training dataset into R to explore its structure.  I used the functions `str` and
+`summary` to look at the structure of the data.
+```{r}
+#Load packages
+require(caret, quietly = TRUE)
+require(randomForest, quietly = TRUE)
+
+#Load training data
+trainDf = read.csv("./data/pml-training.csv")
+```
+
+The data-frame contains 19622 rows and 160 columns.
+
+I was able to identify 100 variables which contained mostly missing (either NA or empty string) data.  
+
+```{r}
+#Find columns with NAs or empty strings
+naCount      = apply(trainDf, 2, function(x)length(which(is.na(x))))
+missingCount = apply(trainDf, 2, function(x)length(which(x == "")))
+summaryColumns = sort(names(which(naCount > 0 | missingCount > 0)))
+```
+
+These column names all had the prefixes:
+
+- amplitude
+- avg
+- kurtosis
+- max
+- min
+- skewness
+- stddev
+- var
+
+These columns only contain numeric values in the rows where `new_window = yes` and the names suggest that these are summary
+statistics for each window.  Since we are aiming to predict the class from a single row I decided to discard these columns and those
+referring to the windows, `new_window` and `num_window`.
+
+```{r}
+#Select the non-summary columns
+windowColumns  = which(names(trainDf) %in% c("new_window", "num_window"))
+summaryColumns = which(naCount > 0 | missingCount > 0)
+trainSubDf = trainDf[, -c(windowColumns, summaryColumns)]
+```
+
+The new data-frame contains 58 columns and has no missing values.  The columns are:
+
+- 1 index column, `X`
+- 1 user column, `user_name`
+- 3 timestamp columns
+- 52 data columns from the sensors on the belt, arm, dumbbell and forearm
+- 1 outcome column, `classe`
+
+
+Model Building and Cross-Validation
+------------------------
+I decided to use k-fold cross-validation and a random-forest method to build a prediction algorithm.
+
+I started by splitting the data into the training/testing set and a validation set.  I used ~80% of the 
+data for training/testing and the remaining 20% for validation.
+
+I also decided to remove the index, user and timestamp columns.  Because the data is ordered by the 'classe' 
+variable it will be highly correlated with X and the timestamp variables, although there are not meaningful as
+predictors outside of the training set.
+
+```{r}
+#Separate data into training and validation sets
+#and remove index, user and timestamp columns
+set.seed(3485)
+modelIdx = createDataPartition(trainSubDf$classe, p = 0.8, list = FALSE)
+
+modelData       = trainSubDf[modelIdx, 6:58]
+validationData  = trainSubDf[-modelIdx, 6:58]
+```
+
+I then ran K-fold cross-validation, each time building a random forest and storing that model.
+
+I tried several different values and found that K = 15 was a good compromise between bias and variance.
+
+```{r}
+#Now do k-fold cross-validation
+K = 15
+kfolds = createFolds(modelData$classe, k = K, list = TRUE, returnTrain = TRUE)
+models = vector(length = K, mode = "list")
+
+for (i in 1:K) {
+    training = modelData[kfolds[[i]], ]  #make training
+    testing  = modelData[-kfolds[[i]], ] #make testing
+    
+    #Make model and store it
+    rfMod = randomForest(classe ~., data=training, ntree=500, norm.votes=FALSE)
+    models[[i]] = rfMod
+    
+    #Evaluate on testing set to print accuracy
+    preds = predict(rfMod, newdata=testing)
+    
+    cm = confusionMatrix(preds, testing$classe)
+    cat("Accuracy[", i, "] = ", cm$overall['Accuracy'], "\n", sep="")
+}
+```
+
+To estimate the out-of-sample error I ran each of the models on the validation data-set.
+
+```{r}
+#Use all of the models to make predictions
+validationPreds = lapply(models, function(x){predict(x, newdata=validationData)})
+validationMatrix = matrix(unlist(validationPreds), ncol=nrow(validationData), nrow=K, byrow = TRUE)
+```
+
+I then took a majority vote of the model results to form the final predictions.  I then compared these with the actual classe
+outcomes in the validation data. 
+
+```{r}
+#Use consensus vote of each of the K models to form prediction
+vote <- function(x) {
+    ux = unique(x)
+    ux[which.max(tabulate(match(x, ux)))]
+}
+
+finalPredict = apply(validationMatrix, MARGIN = 2, vote)
+```
+
+I then looked at the measures of accuracy and the confusion matrix.
+
+```{r}
+#Examine confusion matrix and statistics
+finalCm = confusionMatrix(finalPredict, validationData$classe)
+
+cat("Final validation accuracy =", finalCm$overall['Accuracy'], "\n")
+print(finalCm$table)
+```
+
+Conclusions
+------------------------
+Using a random forest machine learning algorithm produced a highly accurate algorithm for prediction
+with an estimated out of sample accuracy of 99.6%
+
+
+
