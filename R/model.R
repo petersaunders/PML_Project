@@ -1,30 +1,33 @@
 #Model building
+setwd("D:/Documents/Other Courses/Practical Machine Learning/Project")
+
+#Load packages
 require(caret)
 require(randomForest)
 
-setwd("D:/Documents/Other Courses/Practical Machine Learning/Project")
+#Load training data
+trainingDf = read.csv("./data/pml-training.csv")
 
-#Load data
-trainDf = read.csv("./data/pml-training.csv")
-testDf  = read.csv("./data/pml-testing.csv")
-
-#Some columns contain a large number of NAs or empty fields
-naCount      = apply(trainDf, 2, function(x)length(which(is.na(x))))
-missingCount = apply(trainDf, 2, function(x)length(which(x == "")))
+#Find columns with NAs or empty strings
+naCount      = apply(trainingDf, 2, function(x)length(which(is.na(x))))
+missingCount = apply(trainingDf, 2, function(x)length(which(x == "")))
 summaryColumns = sort(names(which(naCount > 0 | missingCount > 0)))
 
 #Select the non-summary columns
-windowColumns  = which(names(trainDf) %in% c("new_window", "num_window"))
+windowColumns  = which(names(trainingDf) %in% c("new_window", "num_window"))
 summaryColumns = which(naCount > 0 | missingCount > 0)
-trainSubDf = trainDf[, -c(windowColumns, summaryColumns)]
+trainingDf = trainingDf[, -c(windowColumns, summaryColumns)]
 
-#Separate data into training and validation sets 
+#Remove index, user and timestamp columns
+trainingDf = trainingDf[, 6:58]
+
+#Separate data into training and validation sets
 #and remove index, user and timestamp columns
 set.seed(3485)
-modelIdx = createDataPartition(trainSubDf$classe, p = 0.8, list = FALSE)
+modelIdx = createDataPartition(trainingDf$classe, p = 0.8, list = FALSE)
 
-modelData       = trainSubDf[modelIdx, 6:58]
-validationData  = trainSubDf[-modelIdx, 6:58]
+modelData       = trainingDf[modelIdx, ]
+validationData  = trainingDf[-modelIdx, ]
 
 #Now do k-fold cross-validation
 K = 15
@@ -32,25 +35,25 @@ kfolds = createFolds(modelData$classe, k = K, list = TRUE, returnTrain = TRUE)
 models = vector(length = K, mode = "list")
 
 for (i in 1:K) {
-    training = modelData[kfolds[[i]], ]  #make training
-    testing  = modelData[-kfolds[[i]], ] #make testing
+    kthTraining = modelData[kfolds[[i]], ]  #make training
+    kthTesting  = modelData[-kfolds[[i]], ] #make testing
     
     #Make model and store it
-    rfMod = randomForest(classe ~., data=training, ntree=500, norm.votes=FALSE)
-    models[[i]] = rfMod
+    kthRF = randomForest(classe ~., data=kthTraining, ntree=500, norm.votes=FALSE)
+    models[[i]] = kthRF
     
     #Evaluate on testing set to print accuracy
-    preds = predict(rfMod, newdata=testing)
+    kthPreds = predict(kthRF, newdata = kthTesting)
     
-    cm = confusionMatrix(preds, testing$classe)
+    cm = confusionMatrix(kthPreds, kthTesting$classe)
     cat("Accuracy[", i, "] = ", cm$overall['Accuracy'], "\n", sep="")
 }
 
 #Use all of the models to make predictions
-validationPreds = lapply(models, function(x){predict(x, newdata=validationData)})
-validationMatrix = matrix(unlist(validationPreds), ncol=nrow(validationData), nrow=K, byrow = TRUE)
+validationPreds = lapply(models, function(x){predict(x, newdata = validationData)})
+validationMatrix = matrix(unlist(validationPreds), ncol = nrow(validationData), nrow = K, byrow = TRUE)
 
-#Use consensus vote of each of the K models to form prediction
+#Use vote of each of the K models to form prediction
 vote <- function(x) {
     ux = unique(x)
     ux[which.max(tabulate(match(x, ux)))]
@@ -59,19 +62,37 @@ vote <- function(x) {
 finalPredict = apply(validationMatrix, MARGIN = 2, vote)
 
 #Examine confusion matrix and statistics
-cm = confusionMatrix(finalPredict, validationData$classe)
+finalCm = confusionMatrix(finalPredict, validationData$classe)
 
-cat("Final validation accuracy =", cm$overall['Accuracy'], "\n")
-print(cm$table)
+cat("Final validation accuracy =", finalCm$overall['Accuracy'], "\n")
+print(finalCm$table)
 
-#Do my predictions on the testing set
-testSubDf = testDf[, -c(windowColumns, summaryColumns)]
-testSubDf = testSubDf[, 6:58]
 
-testSetPreds = lapply(models, function(x){predict(x, newdata=testSubDf)})
-testSetMatrix = matrix(unlist(testSetPreds), ncol=nrow(testSubDf), nrow=K, byrow = TRUE)
+### Do my predictions on the testing set ###
+testingDf  = read.csv("./data/pml-testing.csv")
+
+testingDf = testingDf[, -c(windowColumns, summaryColumns)]
+testingDf = testingDf[, 6:58]
+
+testSetPreds = lapply(models, function(x){predict(x, newdata=testingDf)})
+testSetMatrix = matrix(unlist(testSetPreds), ncol = nrow(testingDf), nrow = K, byrow = TRUE)
 
 finalTestPredict = apply(testSetMatrix, MARGIN = 2, vote)
+
+#Write out to file using supplied function
+pml_write_files = function(x){
+    n = length(x)
+    for(i in 1:n){
+        filename = paste0("problem_id_",i,".txt")
+        write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+    }
+}
+
+#Ensure character vector
+answers = as.character(finalTestPredict)
+pml_write_files(answers)
+
+
 
 
 
