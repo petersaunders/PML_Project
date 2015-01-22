@@ -8,7 +8,7 @@
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
 <meta name="generator" content="pandoc" />
 
-<meta name="author" content="PSaunders" />
+<meta name="author" content="Peter Saunders" />
 
 
 <title>Practical Machine Learning Project</title>
@@ -53,30 +53,33 @@ if (window.hljs && document.readyState && document.readyState === "complete") {
 
 <div id="header">
 <h1 class="title">Practical Machine Learning Project</h1>
-<h4 class="author"><em>PSaunders</em></h4>
+<h4 class="author"><em>Peter Saunders</em></h4>
 <h4 class="date"><em>Sunday, January 18, 2015</em></h4>
 </div>
 
 
 <div id="project-aims" class="section level2">
 <h2>Project Aims</h2>
-<p>The aim is to produce a machine learning algorithm to predict the manner in which a bicep curl was performed from data obtained from sensors on the dumbbell and the participant’s belt, arm and forearm.</p>
+<p>The aim of this project is to produce a machine learning algorithm to predict the quality with which a bicep curl was performed from data obtained from sensors on the dumbbell and the athlete’s belt, arm and forearm.</p>
 </div>
 <div id="data-exploration-and-cleaning" class="section level2">
 <h2>Data Exploration and Cleaning</h2>
 <p>I began by loading the Weight Lifting Exercise training dataset into R to explore its structure. I used the functions <code>str</code> and <code>summary</code> to look at the structure of the data.</p>
 <pre class="r"><code>#Load packages
-require(caret, quietly = TRUE)
-require(randomForest, quietly = TRUE)</code></pre>
-<pre><code>## randomForest 4.6-10
+require(caret)</code></pre>
+<pre><code>## Loading required package: caret
+## Loading required package: lattice
+## Loading required package: ggplot2</code></pre>
+<pre class="r"><code>require(randomForest)</code></pre>
+<pre><code>## Loading required package: randomForest
+## randomForest 4.6-10
 ## Type rfNews() to see new features/changes/bug fixes.</code></pre>
 <pre class="r"><code>#Load training data
-trainDf = read.csv(&quot;./data/pml-training.csv&quot;)</code></pre>
-<p>The data-frame contains 19622 rows and 160 columns.</p>
-<p>I was able to identify 100 variables which contained mostly missing (either NA or empty string) data.</p>
+trainingDf = read.csv(&quot;./data/pml-training.csv&quot;)</code></pre>
+<p>The raw data-frame contains 19622 rows and 160 columns but, looking at the summary information, I was able to identify 100 columns which contained mostly missing (either NA or empty string) data.</p>
 <pre class="r"><code>#Find columns with NAs or empty strings
-naCount      = apply(trainDf, 2, function(x)length(which(is.na(x))))
-missingCount = apply(trainDf, 2, function(x)length(which(x == &quot;&quot;)))
+naCount      = apply(trainingDf, 2, function(x)length(which(is.na(x))))
+missingCount = apply(trainingDf, 2, function(x)length(which(x == &quot;&quot;)))
 summaryColumns = sort(names(which(naCount &gt; 0 | missingCount &gt; 0)))</code></pre>
 <p>These column names all had the prefixes:</p>
 <ul>
@@ -91,10 +94,10 @@ summaryColumns = sort(names(which(naCount &gt; 0 | missingCount &gt; 0)))</code>
 </ul>
 <p>These columns only contain numeric values in the rows where <code>new_window = yes</code> and the names suggest that these are summary statistics for each window. Since we are aiming to predict the class from a single row I decided to discard these columns and those referring to the windows, <code>new_window</code> and <code>num_window</code>.</p>
 <pre class="r"><code>#Select the non-summary columns
-windowColumns  = which(names(trainDf) %in% c(&quot;new_window&quot;, &quot;num_window&quot;))
+windowColumns  = which(names(trainingDf) %in% c(&quot;new_window&quot;, &quot;num_window&quot;))
 summaryColumns = which(naCount &gt; 0 | missingCount &gt; 0)
-trainSubDf = trainDf[, -c(windowColumns, summaryColumns)]</code></pre>
-<p>The new data-frame contains 58 columns and has no missing values. The columns are:</p>
+trainingDf = trainingDf[, -c(windowColumns, summaryColumns)]</code></pre>
+<p>The data-frame now contains 58 columns and has no missing values. The columns are:</p>
 <ul>
 <li>1 index column, <code>X</code></li>
 <li>1 user column, <code>user_name</code></li>
@@ -102,38 +105,40 @@ trainSubDf = trainDf[, -c(windowColumns, summaryColumns)]</code></pre>
 <li>52 data columns from the sensors on the belt, arm, dumbbell and forearm</li>
 <li>1 outcome column, <code>classe</code></li>
 </ul>
+<p>I decided to also remove the index, user and timestamp columns. Because the data is ordered by the ‘classe’ (A-E) variable it will be highly correlated with X and the timestamp variables, although these are not meaningful as predictors outside of this particular training set and would give a highly biased estimate for the out-of-sample error.</p>
+<pre class="r"><code>#Remove index, user and timestamp columns
+trainingDf = trainingDf[, 6:58]</code></pre>
 </div>
 <div id="model-building-and-cross-validation" class="section level2">
 <h2>Model Building and Cross-Validation</h2>
 <p>I decided to use k-fold cross-validation and a random-forest method to build a prediction algorithm.</p>
 <p>I started by splitting the data into the training/testing set and a validation set. I used ~80% of the data for training/testing and the remaining 20% for validation.</p>
-<p>I also decided to remove the index, user and timestamp columns. Because the data is ordered by the ‘classe’ variable it will be highly correlated with X and the timestamp variables, although there are not meaningful as predictors outside of the training set.</p>
 <pre class="r"><code>#Separate data into training and validation sets
 #and remove index, user and timestamp columns
 set.seed(3485)
-modelIdx = createDataPartition(trainSubDf$classe, p = 0.8, list = FALSE)
+modelIdx = createDataPartition(trainingDf$classe, p = 0.8, list = FALSE)
 
-modelData       = trainSubDf[modelIdx, 6:58]
-validationData  = trainSubDf[-modelIdx, 6:58]</code></pre>
+modelData       = trainingDf[modelIdx, ]
+validationData  = trainingDf[-modelIdx, ]</code></pre>
 <p>I then ran K-fold cross-validation, each time building a random forest and storing that model.</p>
-<p>I tried several different values and found that K = 15 was a good compromise between bias and variance.</p>
+<p>I tried several different values and found that K = 15 was a good compromise between bias and variance and did not take too long to evaluate.</p>
 <pre class="r"><code>#Now do k-fold cross-validation
 K = 15
 kfolds = createFolds(modelData$classe, k = K, list = TRUE, returnTrain = TRUE)
 models = vector(length = K, mode = &quot;list&quot;)
 
 for (i in 1:K) {
-    training = modelData[kfolds[[i]], ]  #make training
-    testing  = modelData[-kfolds[[i]], ] #make testing
+    kthTraining = modelData[kfolds[[i]], ]  #make training
+    kthTesting  = modelData[-kfolds[[i]], ] #make testing
     
     #Make model and store it
-    rfMod = randomForest(classe ~., data=training, ntree=500, norm.votes=FALSE)
-    models[[i]] = rfMod
+    kthRF = randomForest(classe ~., data=kthTraining, ntree=500, norm.votes=FALSE)
+    models[[i]] = kthRF
     
     #Evaluate on testing set to print accuracy
-    preds = predict(rfMod, newdata=testing)
+    kthPreds = predict(kthRF, newdata = kthTesting)
     
-    cm = confusionMatrix(preds, testing$classe)
+    cm = confusionMatrix(kthPreds, kthTesting$classe)
     cat(&quot;Accuracy[&quot;, i, &quot;] = &quot;, cm$overall['Accuracy'], &quot;\n&quot;, sep=&quot;&quot;)
 }</code></pre>
 <pre><code>## Accuracy[1] = 0.9961796
@@ -153,17 +158,17 @@ for (i in 1:K) {
 ## Accuracy[15] = 0.9961796</code></pre>
 <p>To estimate the out-of-sample error I ran each of the models on the validation data-set.</p>
 <pre class="r"><code>#Use all of the models to make predictions
-validationPreds = lapply(models, function(x){predict(x, newdata=validationData)})
-validationMatrix = matrix(unlist(validationPreds), ncol=nrow(validationData), nrow=K, byrow = TRUE)</code></pre>
-<p>I then took a majority vote of the model results to form the final predictions. I then compared these with the actual classe outcomes in the validation data.</p>
-<pre class="r"><code>#Use consensus vote of each of the K models to form prediction
+validationPreds = lapply(models, function(x){predict(x, newdata = validationData)})
+validationMatrix = matrix(unlist(validationPreds), ncol = nrow(validationData), nrow = K, byrow = TRUE)</code></pre>
+<p>I then used a ‘vote’ of the model results to and selected the most common (modal) prediction as the final predictions. I then compared these with the actual classe outcomes in the validation data.</p>
+<pre class="r"><code>#Use vote of each of the K models to form prediction
 vote &lt;- function(x) {
     ux = unique(x)
     ux[which.max(tabulate(match(x, ux)))]
 }
 
 finalPredict = apply(validationMatrix, MARGIN = 2, vote)</code></pre>
-<p>I then looked at the measures of accuracy and the confusion matrix.</p>
+<p>I then looked at the measures of accuracy and the confusion matrix to estimate the out-of-sample error.</p>
 <pre class="r"><code>#Examine confusion matrix and statistics
 finalCm = confusionMatrix(finalPredict, validationData$classe)
 
@@ -180,7 +185,8 @@ cat(&quot;Final validation accuracy =&quot;, finalCm$overall['Accuracy'], &quot;
 </div>
 <div id="conclusions" class="section level2">
 <h2>Conclusions</h2>
-<p>Using a random forest machine learning algorithm produced a highly accurate algorithm for prediction with an estimated out of sample accuracy of</p>
+<p>Using a random forest approach I was able to produce a highly accurate algorithm for predicting the ‘classe’ of the exercise performed.</p>
+<p>Based on the results of prediction on the independent validation data-set, I estimate an <strong>out-of-sample error rate of 0.4%</strong>.</p>
 </div>
 
 
