@@ -186,7 +186,7 @@ algorithm for predicting the 'classe' of the exercise performed.
 
 Based on the results of prediction on the independent validation data-set, I estimate an **out-of-sample error rate of 0.4%**.
 
-Plotting the most important variables shows that there is very little differentiation between the classes in any single variable.  The model is accurate because it uses a large number (51) of predictors and the aggregated random forest approach is well-suited to problems such as these.
+Plotting the most important variables shows that there is very little differentiation between the classes in any single variable.  The model is accurate because it uses a large number (52) of predictors and the aggregated random forest approach is well-suited to problems such as these.
 
 
 
