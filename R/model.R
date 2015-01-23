@@ -79,6 +79,31 @@ testSetMatrix = matrix(unlist(testSetPreds), ncol = nrow(testingDf), nrow = K, b
 
 finalTestPredict = apply(testSetMatrix, MARGIN = 2, vote)
 
+
+### Look at the most important variables in the models ###
+require(AppliedPredictiveModeling)
+require(ellipse)
+
+topNImportant <- function(model, N=4) {
+    imps     = importance(model)
+    rankedVars = rownames(imps)[order(imps, decreasing=TRUE)]    
+    topN = rankedVars[1:N]
+    
+    return(topN)
+}
+
+importantVars = sapply(models, topNImportant)
+top4Overall   = apply(importantVars, 1, vote)
+
+featurePlot(x = validationData[, top4Overall],
+            y = validationData$classe,
+            plot = "pairs",
+            #visual args
+            auto.key = list(columns = 5))
+
+
+
+
 #Write out to file using supplied function
 pml_write_files = function(x){
     n = length(x)

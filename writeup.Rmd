@@ -17,7 +17,7 @@ Data Exploration and Cleaning
 I began by loading the Weight Lifting Exercise training dataset into R to explore its structure.  I used the functions `str` and
 `summary` to look at the structure of the data.
 
-```{r}
+```{r message=FALSE}
 #Load packages
 require(caret)
 require(randomForest)
@@ -129,7 +129,7 @@ validationPreds = lapply(models, function(x){predict(x, newdata = validationData
 validationMatrix = matrix(unlist(validationPreds), ncol = nrow(validationData), nrow = K, byrow = TRUE)
 ```
 
-I then used a 'vote' of the model results to and selected the most common (modal) prediction as the final predictions.  I then compared these with the actual classe outcomes in the validation data.
+I then used a 'vote' of the model results to select the most common (modal) prediction from the K models.
 
 ```{r}
 #Use vote of each of the K models to form prediction
@@ -151,12 +151,42 @@ cat("Final validation accuracy =", finalCm$overall['Accuracy'], "\n")
 print(finalCm$table)
 ```
 
+I decided to look at the most important variables and plot them to see how separable the classes
+are within these variables.
+
+```{r message=FALSE, fig.width=8, fig.height=8}
+### Look at the most important variables in the models ###
+require(AppliedPredictiveModeling)
+require(ellipse)
+
+topNImportant <- function(model, N=4) {
+    imps     = importance(model)
+    rankedVars = rownames(imps)[order(imps, decreasing=TRUE)]    
+    topN = rankedVars[1:N]
+    
+    return(topN)
+}
+
+importantVars = sapply(models, topNImportant)
+top4Overall   = apply(importantVars, 1, vote)
+cat("Most important variables: ", paste(top4Overall, collapse=", "), "...", sep="")
+
+featurePlot(x = validationData[, top4Overall],
+            y = validationData$classe,
+            plot = "pairs",
+            #visual args
+            auto.key = list(columns = 5))
+```
+
+
 Conclusions
 ------------------------
 Using a random forest approach I was able to produce a highly accurate 
 algorithm for predicting the 'classe' of the exercise performed.
 
 Based on the results of prediction on the independent validation data-set, I estimate an **out-of-sample error rate of 0.4%**.
+
+Plotting the most important variables shows that there is very little differentiation between the classes in any single variable.  The model is accurate because it uses a large number (51) of predictors and the aggregated random forest approach is well-suited to problems such as these.
 
 
 
